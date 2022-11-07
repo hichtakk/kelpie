@@ -26,6 +26,7 @@ func newCmd() *cobra.Command {
 	}
 	rootCmd.AddCommand(
 		NewCmdHttpGet(&query),
+		NewCmdHttpPost(&query),
 	)
 	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "", false, "enable debug mode")
 	rootCmd.PersistentFlags().StringSliceVarP(&query, "query", "q", []string{}, "")
@@ -51,6 +52,32 @@ func NewCmdHttpGet(query *[]string) *cobra.Command {
 			var resp *vsphere.Response
 			vsc.Login()
 			resp = vsc.Request("GET", args[0], params, []byte{})
+			resp.Print(false)
+			vsc.Logout()
+		},
+	}
+
+	return httpGetCmd
+}
+
+func NewCmdHttpPost(query *[]string) *cobra.Command {
+	httpGetCmd := &cobra.Command{
+		Use:   "post ${API-PATH}",
+		Short: "call api with HTTP POST method",
+		Long:  "example) kelpie post /api/vcenter/vm/{vm}/power -q action=reset",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			params := map[string]string{}
+			for _, q := range *query {
+				qSlice := strings.Split(q, "=")
+				if len(qSlice) != 2 {
+					panic("invalid query parameter. it should be formatted as '<name>=<value>'.")
+				}
+				params[qSlice[0]] = qSlice[1]
+			}
+			var resp *vsphere.Response
+			vsc.Login()
+			resp = vsc.Request("POST", args[0], params, []byte{})
 			resp.Print(false)
 			vsc.Logout()
 		},
