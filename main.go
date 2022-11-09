@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"strings"
 
@@ -61,11 +64,31 @@ func NewCmdHttpGet(query *[]string) *cobra.Command {
 }
 
 func NewCmdHttpPost(query *[]string) *cobra.Command {
-	httpGetCmd := &cobra.Command{
+	fileName := ""
+	data := []byte{}
+	httpPostCmd := &cobra.Command{
 		Use:   "post ${API-PATH}",
 		Short: "call api with HTTP POST method",
 		Long:  "example) kelpie post /api/vcenter/vm/{vm}/power -q action=reset",
 		Args:  cobra.ExactArgs(1),
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			rawData := []byte{}
+			var err error
+			if fileName != "" {
+				rawData, err = readRequestData(fileName)
+				if err != nil {
+					return err
+				}
+			} else {
+				rawData = nil
+			}
+			jsonObj := json.RawMessage(rawData)
+			data, err = json.Marshal(jsonObj)
+			if err != nil {
+				return err
+			}
+			return nil
+		},
 		Run: func(cmd *cobra.Command, args []string) {
 			params := map[string]string{}
 			for _, q := range *query {
@@ -77,13 +100,34 @@ func NewCmdHttpPost(query *[]string) *cobra.Command {
 			}
 			var resp *vsphere.Response
 			vsc.Login()
-			resp = vsc.Request("POST", args[0], params, []byte{})
+			resp = vsc.Request("POST", args[0], params, data)
 			resp.Print(false)
 			vsc.Logout()
 		},
 	}
+	httpPostCmd.Flags().StringVarP(&fileName, "filename", "f", "", "file name for request data(json)")
 
-	return httpGetCmd
+	return httpPostCmd
+}
+
+func readRequestData(fileName string) ([]byte, error) {
+	if fileName == "-" {
+		return readFromStdIn()
+	} else {
+		return ioutil.ReadFile(fileName)
+	}
+}
+
+func readFromStdIn() ([]byte, error) {
+	var body string
+	stdin := bufio.NewScanner(os.Stdin)
+	for stdin.Scan() {
+		if err := stdin.Err(); err != nil {
+			return []byte{}, err
+		}
+		body += stdin.Text()
+	}
+	return []byte(body), nil
 }
 
 func main() {
