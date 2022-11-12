@@ -15,15 +15,12 @@ import (
 )
 
 type VSphereClient struct {
-	BaseUrl     string
-	BasicAuth   bool
-	Token       string
-	httpClient  *http.Client
-	Debug       bool
-	Version     string
-	FullVersion string
-	user        string
-	password    string
+	BaseUrl    string
+	Token      string
+	httpClient *http.Client
+	Debug      bool
+	user       string
+	password   string
 }
 
 func NewVSphereClient(debug bool) *VSphereClient {
@@ -34,7 +31,7 @@ func NewVSphereClient(debug bool) *VSphereClient {
 		Transport: transportConfig,
 		Timeout:   time.Duration(30) * time.Second,
 	}
-	vSphereClient := &VSphereClient{BasicAuth: false, Token: "", httpClient: client, Debug: debug}
+	vSphereClient := &VSphereClient{Token: "", httpClient: client, Debug: debug}
 
 	return vSphereClient
 }
@@ -81,32 +78,18 @@ func (c *VSphereClient) Logout() error {
 	return nil
 }
 
-func (c *VSphereClient) ListSupervisorCluster() {
-
-}
-
 type Response struct {
 	*http.Response
-	Body  interface{}
+	Body  string
 	Error error
 }
 
-func (r *Response) BodyBytes() ([]byte, error) {
-	return json.Marshal(r.Body)
-}
-
-func (r *Response) UnmarshalBody(strct interface{}) {
-	bytes, _ := r.BodyBytes()
-	json.Unmarshal(bytes, strct)
-}
-
-func (r *Response) Print(noPretty bool) {
-	var body []byte
+func (r *Response) Print() {
 	if r.Error != nil {
 		fmt.Fprintln(os.Stderr, r.Error.Error())
 		return
 	}
-	if r.Body == nil {
+	if r.Body == "" {
 		var msg string
 		switch r.StatusCode {
 		case 404:
@@ -118,31 +101,27 @@ func (r *Response) Print(noPretty bool) {
 		}
 		fmt.Printf("{\"code\": %d, \"body\": \"%v\"}\n", r.StatusCode, msg)
 	} else {
-		if noPretty {
-			body, _ = r.BodyBytes()
-		} else {
-			body, _ = json.MarshalIndent(r.Body, "", "  ")
-		}
-		fmt.Println(string(body))
+		fmt.Println(r.Body)
 	}
 }
 
+func (c *VSphereClient) validatePath(path string) error {
+	match := false
+	for _, v := range []string{"/api/"} {
+		if strings.HasPrefix(path, v) {
+			match = true
+		}
+	}
+	if match == false {
+		return fmt.Errorf("path must start with \"/api/\"")
+	}
+	return nil
+}
+
 func (c *VSphereClient) Request(method string, path string, query_param map[string]string, req_data []byte) *Response {
-	err := func() error {
-		var match bool
-		match = false
-		for _, v := range []string{"/api/"} {
-			if strings.HasPrefix(path, v) {
-				match = true
-			}
-		}
-		if match == false {
-			return fmt.Errorf("path must start with \"/api/\"")
-		}
-		return nil
-	}()
+	err := c.validatePath(path)
 	if err != nil {
-		return &Response{nil, nil, err}
+		return &Response{nil, "", err}
 	}
 	req, _ := http.NewRequest(method, c.BaseUrl+path, bytes.NewBuffer(req_data))
 	req.Header.Set("Content-Type", "application/json")
@@ -156,30 +135,24 @@ func (c *VSphereClient) Request(method string, path string, query_param map[stri
 	}
 	res, err := c.httpClient.Do(req)
 	if err != nil {
-		fmt.Println(err)
-		return &Response{}
+		log.Println(err)
+		return &Response{nil, "", err}
 	}
 	defer res.Body.Close()
 	res_body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		log.Println(err)
-		return &Response{}
+		return &Response{res, "", err}
 	}
-	var data interface{}
-	if len(res_body) > 0 {
-		err = json.Unmarshal(res_body, &data)
-		if err != nil {
-			log.Println(err)
-			return &Response{}
-		}
-		r := &Response{res, data, nil}
-		return r
-	} else {
-		return &Response{res, nil, nil}
-	}
-}
 
-func (c *VSphereClient) Exec(uri string) {
-	res := c.Request("GET", uri, nil, nil)
-	fmt.Println(res.Body)
+	if len(res_body) > 0 {
+		var prettyJSON bytes.Buffer
+		if err := json.Indent(&prettyJSON, res_body, "", "    "); err != nil {
+			log.Println(err)
+			return &Response{res, "", err}
+		}
+		return &Response{res, prettyJSON.String(), nil}
+	} else {
+		return &Response{res, "", nil}
+	}
 }

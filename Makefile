@@ -18,9 +18,12 @@ lint: ## Examine source code and lint
 	go vet ./...
 	golint -set_exit_status ./...
 
+test: ## run test
+	@go test -v -cover ./...
+
 all: $(BUILD_TARGETS) ## build for all platform
 
-build: $(RELEASE_DIR)/$(NAME)_$(GOOS)_$(GOARCH) ## build nsxctl
+build: $(RELEASE_DIR)/$(NAME)_$(GOOS)_$(GOARCH) ## build kelpie
 
 build-linux-amd64: ## build AMD64 linux binary
 	@$(MAKE) build GOOS=linux GOARCH=amd64
@@ -34,9 +37,9 @@ build-darwin-amd64: ## build AMD64 darwin binary
 build-darwin-arm64: ## build AMD64 darwin binary
 	@$(MAKE) build GOOS=darwin GOARCH=arm64
 
-$(RELEASE_DIR)/$(NAME)_$(GOOS)_$(GOARCH): ## Build nsx command-line client
+$(RELEASE_DIR)/$(NAME)_$(GOOS)_$(GOARCH):
 	@printf "\e[32m"
-	@echo "==> Build nsxctl for ${GOOS}-${GOARCH}"
+	@echo "==> Build kelpie for ${GOOS}-${GOARCH}"
 	@printf "\e[90m"
 	@GO111MODULE=on go build -tags netgo -a -v -o $(RELEASE_DIR)/$(NAME)_$(GOOS)_$(GOARCH) ./main.go
 	@printf "\e[m"

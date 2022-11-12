@@ -24,8 +24,8 @@ var (
 func newCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "kelpie",
-		Short: "vSphere command-line client",
-		Long:  "vSphere command-line client",
+		Short: "simple vSphere REST API client",
+		Long:  "simple vSphere REST API client",
 	}
 	rootCmd.AddCommand(
 		NewCmdHttpGet(&query),
@@ -55,7 +55,11 @@ func NewCmdHttpGet(query *[]string) *cobra.Command {
 			var resp *vsphere.Response
 			vsc.Login()
 			resp = vsc.Request("GET", args[0], params, []byte{})
-			resp.Print(false)
+			if resp.Error != nil {
+				fmt.Println(resp.Error)
+			} else {
+				resp.Print()
+			}
 			vsc.Logout()
 		},
 	}
@@ -101,7 +105,11 @@ func NewCmdHttpPost(query *[]string) *cobra.Command {
 			var resp *vsphere.Response
 			vsc.Login()
 			resp = vsc.Request("POST", args[0], params, data)
-			resp.Print(false)
+			if resp.Error != nil {
+				fmt.Println(resp.Error)
+			} else {
+				resp.Print()
+			}
 			vsc.Logout()
 		},
 	}
@@ -131,7 +139,7 @@ func readFromStdIn() ([]byte, error) {
 }
 
 func main() {
-	vsc = vsphere.NewVSphereClient(false)
+	vsc = vsphere.NewVSphereClient(debug)
 
 	server := os.Getenv("KELPIE_VCENTER_SERVER")
 	if server == "" {
