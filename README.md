@@ -44,4 +44,18 @@ $ kelpie get /api/vcenter/vm
 
 # restart vm
 $ kelpie post /api/vcenter/vm/${VM_ID}/power -q action=reset
+
+# create resource pool
+# '-f' option accepts file name or data directly from stdin
+$ kelpie post /api/vcenter/resource-pool -f - << EOF 
+{"name": "rp-01", "parent": "resgroup-9"}
+EOF
+
+# update resource pool 
+$ kelpie patch /api/vcenter/resource-pool/${RP_ID} -f - << EOF
+{"name": "rp-02"}
+EOF
+
+# delete resource pool
+$ kelpie delete /api/vcenter/resource-pool/${RP_ID}
 ```
