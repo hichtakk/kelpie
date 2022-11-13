@@ -6,8 +6,6 @@ THIS_GOOS = $(word 1,$(subst /, ,$(lastword $(GOVERSION))))
 THIS_GOARCH = $(word 2,$(subst /, ,$(lastword $(GOVERSION))))
 GOOS = $(THIS_GOOS)
 GOARCH = $(THIS_GOARCH)
-VERSION = $(patsubst "%",%,$(lastword $(shell grep 'const version' main.go)))
-REVISION = $(shell git rev-parse HEAD)
 
 .PHONY: fmt build clean
 

@@ -18,14 +18,24 @@ var (
 	useSite    string
 	debug      bool
 	query      []string
+	ver        bool
 	vsc        *vsphere.VSphereClient
 )
+
+const version = "v0.0.1"
 
 func newCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "kelpie",
 		Short: "simple vSphere REST API client",
 		Long:  "simple vSphere REST API client",
+		Run: func(cmd *cobra.Command, args []string) {
+			if ver == true {
+				fmt.Println(version)
+				return
+			}
+			cmd.Help()
+		},
 	}
 	rootCmd.AddCommand(
 		NewCmdHttpGet(&query),
@@ -36,6 +46,7 @@ func newCmd() *cobra.Command {
 	)
 	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "", false, "enable debug mode")
 	rootCmd.PersistentFlags().StringSliceVarP(&query, "query", "q", []string{}, "")
+	rootCmd.Flags().BoolVarP(&ver, "version", "v", false, "show kelpie version")
 
 	return rootCmd
 }
