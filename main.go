@@ -2,11 +2,13 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -14,15 +16,16 @@ import (
 )
 
 var (
-	configfile string
-	useSite    string
-	debug      bool
-	query      []string
-	ver        bool
-	vsc        *vsphere.VSphereClient
+	debug bool
+	query []string
+	ver   bool
+	vsc   *vsphere.VSphereClient
 )
 
-const version = "v0.0.1"
+var (
+	version  = "v0.0.0"
+	revision = "0000000000000000000000000000000000000000"
+)
 
 func newCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
@@ -30,8 +33,8 @@ func newCmd() *cobra.Command {
 		Short: "simple vSphere REST API client",
 		Long:  "simple vSphere REST API client",
 		Run: func(cmd *cobra.Command, args []string) {
-			if ver == true {
-				fmt.Println(version)
+			if ver {
+				fmt.Println(version, revision)
 				return
 			}
 			cmd.Help()
@@ -67,10 +70,17 @@ func NewCmdHttpGet(query *[]string) *cobra.Command {
 				params[qSlice[0]] = qSlice[1]
 			}
 			var resp *vsphere.Response
+			hc := &http.Client{
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				},
+				Timeout: time.Duration(30) * time.Second,
+			}
+			vsc.SetHttpClient(hc)
 			vsc.Login()
-			resp = vsc.Request("GET", args[0], params, []byte{})
-			if resp.Error != nil {
-				fmt.Println(resp.Error)
+			resp, err := vsc.Call("GET", args[0], params, []byte{})
+			if err != nil {
+				fmt.Println(err)
 			} else {
 				resp.Print()
 			}
@@ -97,8 +107,6 @@ func NewCmdHttpPost(query *[]string) *cobra.Command {
 				if err != nil {
 					return err
 				}
-			} else {
-				rawData = nil
 			}
 			jsonObj := json.RawMessage(rawData)
 			data, err = json.Marshal(jsonObj)
@@ -117,10 +125,17 @@ func NewCmdHttpPost(query *[]string) *cobra.Command {
 				params[qSlice[0]] = qSlice[1]
 			}
 			var resp *vsphere.Response
+			hc := &http.Client{
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				},
+				Timeout: time.Duration(30) * time.Second,
+			}
+			vsc.SetHttpClient(hc)
 			vsc.Login()
-			resp = vsc.Request("POST", args[0], params, data)
-			if resp.Error != nil {
-				fmt.Println(resp.Error)
+			resp, err := vsc.Call("POST", args[0], params, data)
+			if err != nil {
+				fmt.Println(err)
 			} else {
 				resp.Print()
 			}
@@ -148,8 +163,6 @@ func NewCmdHttpPatch(query *[]string) *cobra.Command {
 				if err != nil {
 					return err
 				}
-			} else {
-				rawData = nil
 			}
 			jsonObj := json.RawMessage(rawData)
 			data, err = json.Marshal(jsonObj)
@@ -168,10 +181,17 @@ func NewCmdHttpPatch(query *[]string) *cobra.Command {
 				params[qSlice[0]] = qSlice[1]
 			}
 			var resp *vsphere.Response
+			hc := &http.Client{
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				},
+				Timeout: time.Duration(30) * time.Second,
+			}
+			vsc.SetHttpClient(hc)
 			vsc.Login()
-			resp = vsc.Request("PATCH", args[0], params, data)
-			if resp.Error != nil {
-				fmt.Println(resp.Error)
+			resp, err := vsc.Call("PATCH", args[0], params, data)
+			if err != nil {
+				fmt.Println(err)
 			} else {
 				resp.Print()
 			}
@@ -199,8 +219,6 @@ func NewCmdHttpPut(query *[]string) *cobra.Command {
 				if err != nil {
 					return err
 				}
-			} else {
-				rawData = nil
 			}
 			jsonObj := json.RawMessage(rawData)
 			data, err = json.Marshal(jsonObj)
@@ -219,10 +237,17 @@ func NewCmdHttpPut(query *[]string) *cobra.Command {
 				params[qSlice[0]] = qSlice[1]
 			}
 			var resp *vsphere.Response
+			hc := &http.Client{
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				},
+				Timeout: time.Duration(30) * time.Second,
+			}
+			vsc.SetHttpClient(hc)
 			vsc.Login()
-			resp = vsc.Request("PUT", args[0], params, data)
-			if resp.Error != nil {
-				fmt.Println(resp.Error)
+			resp, err := vsc.Call("PUT", args[0], params, data)
+			if err != nil {
+				fmt.Println(err)
 			} else {
 				resp.Print()
 			}
@@ -250,10 +275,17 @@ func NewCmdHttpDelete(query *[]string) *cobra.Command {
 				params[qSlice[0]] = qSlice[1]
 			}
 			var resp *vsphere.Response
+			hc := &http.Client{
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				},
+				Timeout: time.Duration(30) * time.Second,
+			}
+			vsc.SetHttpClient(hc)
 			vsc.Login()
-			resp = vsc.Request("DELETE", args[0], params, []byte{})
-			if resp.Error != nil {
-				fmt.Println(resp.Error)
+			resp, err := vsc.Call("DELETE", args[0], params, []byte{})
+			if err != nil {
+				fmt.Println(err)
 			} else {
 				resp.Print()
 			}
@@ -268,7 +300,7 @@ func readRequestData(fileName string) ([]byte, error) {
 	if fileName == "-" {
 		return readFromStdIn()
 	} else {
-		return ioutil.ReadFile(fileName)
+		return os.ReadFile(fileName)
 	}
 }
 
@@ -285,7 +317,14 @@ func readFromStdIn() ([]byte, error) {
 }
 
 func main() {
+	hc := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+		Timeout: time.Duration(30) * time.Second,
+	}
 	vsc = vsphere.NewVSphereClient(debug)
+	vsc.SetHttpClient(hc)
 
 	server := os.Getenv("KELPIE_VCENTER_SERVER")
 	if server == "" {

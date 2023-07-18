@@ -2,38 +2,42 @@ package vsphere
 
 import (
 	"bytes"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 	"strings"
-	"time"
 )
+
+type HttpClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
 
 type VSphereClient struct {
 	BaseUrl    string
 	Token      string
-	httpClient *http.Client
 	Debug      bool
+	httpClient HttpClient
 	user       string
 	password   string
 }
 
-func NewVSphereClient(debug bool) *VSphereClient {
-	transportConfig := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{
-		Transport: transportConfig,
-		Timeout:   time.Duration(30) * time.Second,
-	}
-	vSphereClient := &VSphereClient{Token: "", httpClient: client, Debug: debug}
+func (c *VSphereClient) do(req *http.Request) (*http.Response, error) {
+	return c.httpClient.Do(req)
+}
 
-	return vSphereClient
+func NewVSphereClient(debug bool) *VSphereClient {
+	return &VSphereClient{Debug: debug}
+}
+
+func (c *VSphereClient) SetHttpClient(hc HttpClient) {
+	c.httpClient = hc
+}
+
+func (c *VSphereClient) SetVCenterServer(server string) error {
+	c.BaseUrl = server
+	return nil
 }
 
 func (c *VSphereClient) SetCredential(user string, password string) {
@@ -41,32 +45,41 @@ func (c *VSphereClient) SetCredential(user string, password string) {
 	c.password = password
 }
 
+func (c *VSphereClient) SetVCenterToken(token string) {
+	c.Token = token
+}
+
 func (c *VSphereClient) Login() error {
-	target_url := c.BaseUrl + "/api/session"
-	req, _ := http.NewRequest("POST", target_url, bytes.NewBuffer([]byte{}))
-	auth := c.user + ":" + c.password
-	authValue := base64.StdEncoding.EncodeToString([]byte(auth))
-	req.Header.Set("Authorization", "Basic "+authValue)
-	res, err := c.httpClient.Do(req)
+	url := c.BaseUrl + "/api/session"
+	req, _ := http.NewRequest("POST", url, bytes.NewBuffer([]byte{}))
+	cred := c.user + ":" + c.password
+	authToken := base64.StdEncoding.EncodeToString([]byte(cred))
+	req.Header.Set("Authorization", fmt.Sprintf("Basic %s", authToken))
+	res, err := c.do(req)
 	if err != nil {
+		// http error
 		return err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 201 {
+		// authentication error
 		return fmt.Errorf("authentication failed")
 	}
 	if val, ok := res.Header["Vmware-Api-Session-Id"]; ok {
 		c.Token = val[0]
+	} else {
+		// http response header error
+		return fmt.Errorf("session id not found")
 	}
 
 	return nil
 }
 
 func (c *VSphereClient) Logout() error {
-	target_url := c.BaseUrl + "/api/session"
-	req, _ := http.NewRequest("DELETE", target_url, nil)
+	url := c.BaseUrl + "/api/session"
+	req, _ := http.NewRequest("DELETE", url, nil)
 	req.Header.Set("Vmware-Api-Session-Id", c.Token)
-	res, err := c.httpClient.Do(req)
+	res, err := c.do(req)
 	if err != nil {
 		return err
 	}
@@ -78,17 +91,58 @@ func (c *VSphereClient) Logout() error {
 	return nil
 }
 
+func (c *VSphereClient) validatePath(path string) error {
+	match := false
+	for _, v := range []string{"/api/"} {
+		if strings.HasPrefix(path, v) {
+			match = true
+		}
+	}
+	if !match {
+		return fmt.Errorf("request path must start with \"/api/\"")
+	}
+	return nil
+}
+
+func (c *VSphereClient) Call(method string, path string, query map[string]string, body []byte) (*Response, error) {
+	err := c.validatePath(path)
+	if err != nil {
+		return nil, err
+	}
+	req, _ := http.NewRequest(method, c.BaseUrl+path, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Vmware-Api-Session-Id", c.Token)
+	if len(query) > 0 {
+		params := req.URL.Query()
+		for k, v := range query {
+			params.Add(k, v)
+		}
+		req.URL.RawQuery = params.Encode()
+	}
+	res, err := c.do(req)
+	if err != nil {
+		log.Println(err)
+		return &Response{res, ""}, err
+	}
+	defer res.Body.Close()
+	var d any
+	if err := json.NewDecoder(res.Body).Decode(&d); err != nil {
+		return &Response{res, ""}, err
+	}
+	b, err := json.MarshalIndent(d, "", "    ")
+	if err != nil {
+		log.Println(err)
+		return &Response{res, ""}, err
+	}
+	return &Response{res, string(b)}, nil
+}
+
 type Response struct {
 	*http.Response
-	Body  string
-	Error error
+	Body string
 }
 
 func (r *Response) Print() {
-	if r.Error != nil {
-		fmt.Fprintln(os.Stderr, r.Error.Error())
-		return
-	}
 	if r.Body == "" {
 		var msg string
 		switch r.StatusCode {
@@ -102,57 +156,5 @@ func (r *Response) Print() {
 		fmt.Printf("{\"code\": %d, \"body\": \"%v\"}\n", r.StatusCode, msg)
 	} else {
 		fmt.Println(r.Body)
-	}
-}
-
-func (c *VSphereClient) validatePath(path string) error {
-	match := false
-	for _, v := range []string{"/api/"} {
-		if strings.HasPrefix(path, v) {
-			match = true
-		}
-	}
-	if match == false {
-		return fmt.Errorf("path must start with \"/api/\"")
-	}
-	return nil
-}
-
-func (c *VSphereClient) Request(method string, path string, query_param map[string]string, req_data []byte) *Response {
-	err := c.validatePath(path)
-	if err != nil {
-		return &Response{nil, "", err}
-	}
-	req, _ := http.NewRequest(method, c.BaseUrl+path, bytes.NewBuffer(req_data))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Vmware-Api-Session-Id", c.Token)
-	if len(query_param) > 0 {
-		params := req.URL.Query()
-		for k, v := range query_param {
-			params.Add(k, v)
-		}
-		req.URL.RawQuery = params.Encode()
-	}
-	res, err := c.httpClient.Do(req)
-	if err != nil {
-		log.Println(err)
-		return &Response{nil, "", err}
-	}
-	defer res.Body.Close()
-	res_body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		log.Println(err)
-		return &Response{res, "", err}
-	}
-
-	if len(res_body) > 0 {
-		var prettyJSON bytes.Buffer
-		if err := json.Indent(&prettyJSON, res_body, "", "    "); err != nil {
-			log.Println(err)
-			return &Response{res, "", err}
-		}
-		return &Response{res, prettyJSON.String(), nil}
-	} else {
-		return &Response{res, "", nil}
 	}
 }
